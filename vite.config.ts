@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   
   return {
-    base: '/PM_test/',  // GitHub Pages 경로
+    base: '/PM_test/',   // ★ repo 이름과 동일하게
     server: {
       port: 3000,
       host: '0.0.0.0',
@@ -14,12 +14,12 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),  // 일반적인 src alias
-      }
-    }
+        '@': path.resolve(__dirname, './src'),
+      },
+    },
   };
 });
