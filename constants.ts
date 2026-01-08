@@ -1,5 +1,5 @@
 
-import { Question, QuestionType } from './types';
+import { Question, QuestionType } from './types.ts';
 
 export const QUESTIONS: Question[] = [
   // Day 1: Mindset & Role

@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { AppMode, Question, UserAnswer, Choice } from './types';
-import { QUESTIONS } from './constants';
+import { AppMode, Question, UserAnswer, Choice } from './types.ts';
+import { QUESTIONS } from './constants.ts';
 import { GoogleGenAI } from "@google/genai";
 
 // Shuffles an array (Fisher-Yates)
@@ -182,11 +182,11 @@ export default function App() {
   };
 
   const handleExitToHome = useCallback(() => {
-    // Immediate state reset for better reliability
     setMode(AppMode.START);
     setCurrentIdx(0);
     setSelectedId(null);
     setShowExplanation(false);
+    setAiAnalysis(null);
   }, []);
 
   const startQuiz = () => {

@@ -3,7 +3,7 @@
   "name": "PM 마스터리 챌린지",
   "short_name": "PM 챌린지",
   "description": "7일간의 PM 코어 커리큘럼 기반 고난도 실전 테스트",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#6366f1",
