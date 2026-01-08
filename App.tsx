@@ -181,6 +181,14 @@ export default function App() {
     }
   };
 
+  const handleExitToHome = useCallback(() => {
+    // Immediate state reset for better reliability
+    setMode(AppMode.START);
+    setCurrentIdx(0);
+    setSelectedId(null);
+    setShowExplanation(false);
+  }, []);
+
   const startQuiz = () => {
     const shuffled = shuffleArray(QUESTIONS).slice(0, questionLimit);
     setAllQuestions(shuffled);
@@ -204,6 +212,12 @@ export default function App() {
 
   const fetchAiAnalysis = async () => {
     if (allQuestions.length === 0) return;
+    
+    const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+    if (!hasKey) {
+      await (window as any).aistudio.openSelectKey();
+    }
+
     setLoadingAi(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -214,20 +228,48 @@ export default function App() {
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
-      setAiAnalysis(response.text || "분석 결과를 가져올 수 없습니다.");
-    } catch (error) {
+      setAiAnalysis(response.text || "분석 결과를 생성할 수 없습니다.");
+    } catch (error: any) {
       console.error(error);
-      setAiAnalysis("AI 코칭 분석에 실패했습니다. (API Key 확인 필요)");
+      if (error.message?.includes("Requested entity was not found")) {
+        await (window as any).aistudio.openSelectKey();
+        setAiAnalysis(null);
+      } else {
+        setAiAnalysis("AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+      }
     } finally {
       setLoadingAi(false);
     }
   };
 
-  useEffect(() => {
-    if (mode === AppMode.RESULT && allQuestions.length > 0) {
-      fetchAiAnalysis();
-    }
-  }, [mode]);
+  // Common Header Component for Quiz/Review/Result
+  const Header = ({ title, subTitle, showReviewTag }: { title: string; subTitle: string; showReviewTag?: boolean }) => (
+    <header className="flex justify-between items-start mb-4 px-1 w-full max-w-2xl mx-auto">
+      <div className="flex flex-col">
+        <h3 className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">
+          {title}
+        </h3>
+        <div className="text-xl md:text-2xl font-black">
+          {subTitle}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {showReviewTag && (
+          <span className="hidden sm:inline-block px-2 py-0.5 bg-rose-500/10 text-rose-400 rounded text-[10px] font-bold border border-rose-500/20 mr-1">
+            RE-LEARNING
+          </span>
+        )}
+        <button 
+          onClick={handleExitToHome}
+          className="p-2 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-all border border-slate-700 group flex items-center gap-2 cursor-pointer active:scale-95"
+          aria-label="홈으로 나가기"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+          <span className="hidden sm:inline text-xs font-bold uppercase tracking-tighter">Exit</span>
+        </button>
+      </div>
+    </header>
+  );
 
   if (mode === AppMode.START) {
     return (
@@ -271,15 +313,12 @@ export default function App() {
               className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition-all border border-slate-700 flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-              앱으로 설치하여 바로 실행하기
+              앱으로 설치하여 실행하기
             </button>
           </div>
           
           <div className="mt-12 text-slate-600 text-[10px] uppercase font-bold tracking-tighter">
             <p className="mb-2">PRODUCED FOR PROFESSIONAL PRODUCT MANAGERS</p>
-            <p className="font-normal normal-case text-slate-500">
-              Tip: 브라우저 메뉴에서 '홈 화면에 추가'를 누르면 언제든 바로 실행할 수 있습니다.
-            </p>
           </div>
         </div>
       </div>
@@ -288,8 +327,9 @@ export default function App() {
 
   if (mode === AppMode.RESULT) {
     return (
-      <div className="min-h-screen p-6 flex flex-col items-center justify-center">
-        <div className="max-w-2xl w-full">
+      <div className="min-h-screen p-4 md:p-8 flex flex-col items-center">
+        <Header title="Final Report" subTitle="Session Summary" />
+        <div className="max-w-2xl w-full mt-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
             <div className="inline-block p-3 bg-indigo-500/10 rounded-xl mb-6">
@@ -301,22 +341,33 @@ export default function App() {
             </p>
 
             {loadingAi ? (
-              <div className="animate-pulse bg-slate-800/50 h-28 rounded-2xl mb-8 flex items-center justify-center text-slate-500 text-sm italic">
+              <div className="animate-pulse bg-slate-800/50 h-32 rounded-2xl mb-8 flex items-center justify-center text-slate-500 text-sm italic border border-slate-700">
                 AI 시니어 PM 코치가 당신의 역량을 분석 중입니다...
               </div>
             ) : aiAnalysis ? (
-              <div className="bg-slate-800/40 p-5 md:p-6 rounded-2xl mb-8 border border-slate-700/50 text-left">
+              <div className="bg-slate-800/40 p-5 md:p-6 rounded-2xl mb-8 border border-slate-700/50 text-left animate-in fade-in slide-in-from-bottom-2">
                 <h4 className="text-indigo-400 font-bold mb-3 flex items-center gap-2 text-sm uppercase">
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.536 14.95a1 1 0 011.414 1.414l-.707.707a1 1 0 01-1.414-1.414l.707-.707zM6.464 14.95a1 1 0 00-1.414 1.414l.707.707a1 1 0 001.414-1.414l-.707-.707z"></path></svg>
                   Expert Insight
                 </h4>
                 <p className="text-slate-300 leading-relaxed text-sm md:text-base">{aiAnalysis}</p>
               </div>
-            ) : null}
+            ) : (
+              <div className="mb-8 p-6 bg-indigo-500/5 border border-indigo-500/20 rounded-2xl">
+                <p className="text-slate-400 text-sm mb-4">Gemini API 키를 연결하여 시니어 PM 코치의 개인 맞춤 피드백을 받아보세요.</p>
+                <button 
+                  onClick={fetchAiAnalysis}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 text-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                  AI 분석 결과 보기 (API 키 필요)
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-3">
               <button 
-                onClick={() => setMode(AppMode.START)}
+                onClick={handleExitToHome}
                 className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all border border-slate-700"
               >
                 메인으로
@@ -339,21 +390,11 @@ export default function App() {
   return (
     <div className="min-h-screen p-4 md:p-8 flex flex-col items-center">
       <div className="w-full max-w-2xl">
-        <header className="flex justify-between items-end mb-4 px-1">
-          <div>
-            <h3 className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">
-              {mode === AppMode.REVIEW ? 'Review Session' : 'Challenge Progress'}
-            </h3>
-            <div className="text-xl md:text-2xl font-black">
-              {currentIdx + 1} <span className="text-slate-600 text-sm md:text-base">/ {activeQuestions.length}</span>
-            </div>
-          </div>
-          {mode === AppMode.REVIEW && (
-            <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 rounded text-[10px] font-bold border border-rose-500/20">
-              RE-LEARNING
-            </span>
-          )}
-        </header>
+        <Header 
+          title={mode === AppMode.REVIEW ? 'Review Session' : 'Challenge Progress'} 
+          subTitle={`${currentIdx + 1} / ${activeQuestions.length}`}
+          showReviewTag={mode === AppMode.REVIEW}
+        />
 
         <ProgressBar current={currentIdx + 1} total={activeQuestions.length} />
 
