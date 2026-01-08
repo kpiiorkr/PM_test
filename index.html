@@ -19,57 +19,278 @@
           color: #f8fafc;
           -webkit-tap-highlight-color: transparent;
           margin: 0;
+          overflow-x: hidden;
         }
-        .gradient-text { background: linear-gradient(135deg, #a78bfa 0%, #6366f1 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .gradient-text { 
+          background: linear-gradient(135deg, #a78bfa 0%, #6366f1 100%); 
+          -webkit-background-clip: text; 
+          -webkit-text-fill-color: transparent; 
+        }
         input[type='range'] {
           -webkit-appearance: none;
           background: #1e293b;
           border-radius: 10px;
           width: 100%;
+          height: 10px;
+          outline: none;
         }
         input[type='range']::-webkit-slider-thumb {
           -webkit-appearance: none;
-          width: 20px;
-          height: 20px;
+          width: 24px;
+          height: 24px;
           background: #6366f1;
           border-radius: 50%;
           cursor: pointer;
+          border: 3px solid #a78bfa;
+          box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.4s ease-out forwards;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .quiz-card {
+          background: rgba(15, 23, 42, 0.8);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.05);
         }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
-  }
-}
-</script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.0.0",
+        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+        "@google/genai": "https://esm.sh/@google/genai@1.34.0"
+      }
+    }
+    </script>
 </head>
 <body>
     <div id="root">
-        <div class="min-h-screen flex items-center justify-center text-slate-500 text-sm">
-            앱을 불러오는 중...
+        <div class="min-h-screen flex flex-col items-center justify-center bg-[#0f172a]">
+            <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p class="text-slate-500 text-sm font-medium animate-pulse">커리큘럼 로드 중...</p>
         </div>
     </div>
     
-    <!-- 인라인 Babel 스크립트로 index.tsx 역할을 수행하여 MIME 타입 문제 해결 -->
-    <script type="text/babel" data-presets="react,typescript" data-type="module">
-        import React from 'react';
+    <script type="text/babel" data-type="module">
+        import React, { useState, useCallback, useEffect, useMemo } from 'react';
         import ReactDOM from 'react-dom/client';
-        import App from './App.tsx';
+        import { GoogleGenAI } from "@google/genai";
 
-        const rootElement = document.getElementById('root');
-        if (rootElement) {
-            const root = ReactDOM.createRoot(rootElement);
-            root.render(
-                <React.StrictMode>
-                    <App />
-                </React.StrictMode>
+        const AppMode = { START: 'START', QUIZ: 'QUIZ', RESULT: 'RESULT' };
+
+        const QUESTIONS = [
+          { id: 1, day: 1, title: "Day 01: PM의 마인드셋", context: "신기능 배포 후 지표 변화가 미비하자 경영진이 질책합니다.", question: "이때 PM의 가장 적절한 대응은?", choices: [{ id: 1, text: "실패를 인정하고 즉시 기능을 롤백한다." }, { id: 2, text: "개발팀의 노고를 강조하며 품질을 증명한다." }, { id: 3, text: "가설과 결과의 간극을 분석하고 다음 이터레이션을 제안한다." }, { id: 4, text: "마케팅팀에 책임을 회피한다." }], correctAnswerId: 3, explanation: "PM은 가설 검증의 관점에서 실패를 학습의 기회로 전환해야 합니다." },
+          { id: 2, day: 1, title: "Day 01: PMF", question: "PMF를 찾았음을 시사하는 가장 강력한 정성적 신호는?", choices: [{ id: 1, text: "앱스토어 평점이 4.5점 이상" }, { id: 2, text: "Sean Ellis Test에서 40% 이상이 '매우 실망' 응답" }, { id: 3, text: "대규모 투자 유치" }, { id: 4, text: "낮은 고객 획득 비용(CAC)" }], correctAnswerId: 2, explanation: "사용자가 서비스 부재 시 느끼는 결핍의 정도가 PMF의 척도입니다." },
+          { id: 3, day: 1, title: "Day 01: 스테이크홀더", question: "UX 원칙을 강조하며 일정 연기를 요청하는 디자인팀에 대한 PM의 태도는?", choices: [{ id: 1, text: "무조건 디자이너 의견 수용" }, { id: 2, text: "기회 비용과 기대 수익을 비교하여 결정" }, { id: 3, text: "강제로 개발 진행" }, { id: 4, text: "무조건 야근 지시" }], correctAnswerId: 2, explanation: "PM은 비즈니스 목표와 품질 사이에서 트레이드 오프를 결정해야 합니다." },
+          { id: 4, day: 2, title: "Day 02: 시장 규모", question: "당장 장악 가능한 구체적인 시장 규모를 뜻하는 용어는?", choices: [{ id: 1, text: "TAM" }, { id: 2, text: "SAM" }, { id: 3, text: "SOM" }, { id: 4, text: "GDP" }], correctAnswerId: 3, explanation: "SOM(Serviceable Obtainable Market)은 즉시 점유 가능한 시장입니다." },
+          { id: 5, day: 2, title: "Day 02: 레드오션 전략", question: "시장 지배적 사업자가 있는 시장에 진입할 때 가장 먼저 찾아야 할 것은?", choices: [{ id: 1, text: "더 저렴한 가격" }, { id: 2, text: "특정 타겟의 언멧 니즈(Unmet Needs)" }, { id: 3, text: "대규모 마케팅" }, { id: 4, text: "동일한 기능 세트" }], correctAnswerId: 2, explanation: "니치 마켓의 미충족 수요가 진입의 핵심입니다." },
+          { id: 6, day: 3, title: "Day 03: The Mom Test", question: "사용자 인터뷰 시 가장 경계해야 할 질문은?", choices: [{ id: 1, text: "과거 사례 질문" }, { id: 2, text: "미래 행동 의향 질문" }, { id: 3, text: "현재 해결 방식 질문" }, { id: 4, text: "불편함 맥락 질문" }], correctAnswerId: 2, explanation: "가설적 미래 질문은 사용자로부터 거짓 긍정을 이끌어냅니다." },
+          { id: 7, day: 3, title: "Day 03: JTBD 이론", question: "밀크쉐이크의 Job이 '지루한 출근길 달래기'라면 진짜 경쟁자는?", choices: [{ id: 1, text: "다른 브랜드 쉐이크" }, { id: 2, text: "베이글이나 바나나" }, { id: 3, text: "아침 라디오 방송" }, { id: 4, text: "햄버거" }], correctAnswerId: 2, explanation: "JTBD 관점에서는 같은 'Job'을 수행하는 대안재가 경쟁자입니다." },
+          { id: 8, day: 4, title: "Day 04: 문제 정의", question: "문제 정의 시 가장 위험한 함정은?", choices: [{ id: 1, text: "좁은 정의" }, { id: 2, text: "해결책을 미리 정해두고 역으로 정의" }, { id: 3, text: "데이터 기반 현상 파악" }, { id: 4, text: "5 Whys 적용" }], correctAnswerId: 2, explanation: "해결책 편향은 문제의 본질을 가립니다." },
+          { id: 9, day: 4, title: "Day 04: 5 Whys", question: "5 Whys의 최종 목적지는 무엇이어야 하는가?", choices: [{ id: 1, text: "기술적 서버 문제" }, { id: 2, text: "비즈니스 모델의 근본 원인" }, { id: 3, text: "마케팅 예산 부족" }, { id: 4, text: "버튼 색상 문제" }], correctAnswerId: 2, explanation: "Root Cause(근본 원인)를 찾아야 시스템적 해결이 가능합니다." },
+          { id: 10, day: 5, title: "Day 05: MVP 정의", question: "MVP의 가장 중요한 목적은?", choices: [{ id: 1, text: "최소 비용 최대 기능" }, { id: 2, text: "시장 점유율 확보" }, { id: 3, text: "가설 검증을 위한 최소한의 학습" }, { id: 4, text: "개발 속도 테스트" }], correctAnswerId: 3, explanation: "MVP는 빌드가 아니라 학습을 위한 수단입니다." },
+          { id: 11, day: 5, title: "Day 05: Wizard of Oz", question: "사람이 수동으로 처리하지만 사용자에게는 자동처럼 보이게 하는 MVP는?", choices: [{ id: 1, text: "Concierge" }, { id: 2, text: "Wizard of Oz" }, { id: 3, text: "Landing Page" }, { id: 4, text: "Fake Door" }], correctAnswerId: 2, explanation: "기술 구현 전 효과를 검증할 때 유용합니다." },
+          { id: 12, day: 5, title: "Day 05: RICE 스코어", question: "RICE 모델에서 Effort(노력)의 위치는?", choices: [{ id: 1, text: "가중치로 곱해짐" }, { id: 2, text: "다른 점수들과 더해짐" }, { id: 3, text: "점수를 나누는 분모 역할" }, { id: 4, text: "가장 먼저 고려됨" }], correctAnswerId: 3, explanation: "리소스 대비 임팩트를 측정하기 위해 분모로 들어갑니다." },
+          { id: 13, day: 6, title: "Day 06: 북극성 지표", question: "북극성 지표가 갖춰야 할 조건이 아닌 것은?", choices: [{ id: 1, text: "고객 가치 반영" }, { id: 2, text: "매출과 직결" }, { id: 3, text: "선행 지표 성격" }, { id: 4, text: "단순 조회수 등의 허상 지표" }], correctAnswerId: 4, explanation: "의사결정에 도움이 되지 않는 허상 지표는 피해야 합니다." },
+          { id: 14, day: 6, title: "Day 06: 코호트 분석", question: "리텐션 하락 시 가장 먼저 수행해야 할 분석은?", choices: [{ id: 1, text: "평균 리텐션 확인" }, { id: 2, text: "유입 경로/행동별 코호트 세분화" }, { id: 3, text: "광고비 증액" }, { id: 4, text: "전체 설문 조사" }], correctAnswerId: 2, explanation: "데이터를 쪼개야(Segmentation) 진짜 원인이 보입니다." },
+          { id: 15, day: 6, title: "Day 06: AARRR", question: "Aha Moment와 가장 밀접한 단계는?", choices: [{ id: 1, text: "Acquisition" }, { id: 2, text: "Activation" }, { id: 3, text: "Retention" }, { id: 4, text: "Revenue" }], correctAnswerId: 2, explanation: "활성화 단계에서 사용자는 제품의 핵심 가치를 느껴야 합니다." },
+          { id: 16, day: 7, title: "Day 07: KPT 회고", question: "KPT 회고 중 Problem 단계의 원칙은?", choices: [{ id: 1, text: "책임자 비난" }, { id: 2, text: "현상 나열 및 Try 도출" }, { id: 3, text: "감정 토로" }, { id: 4, text: "문제 은폐" }], correctAnswerId: 2, explanation: "비난보다는 개선을 위한 액션 도출이 목적입니다." },
+          { id: 17, day: 4, title: "고난도: 네트워크 효과", question: "초기 플랫폼의 닭과 달걀 문제 해결책으로 부적절한 것은?", choices: [{ id: 1, text: "한쪽 사이드 보조금" }, { id: 2, text: "단일 사용자 모드 제공" }, { id: 3, text: "양쪽 사이드 동시 대량 광고" }, { id: 4, text: "좁은 특정 지역 밀도 확보" }], correctAnswerId: 3, explanation: "동시 대량 마케팅은 대개 효율이 낮아 실패합니다." },
+          { id: 18, day: 6, title: "고난도: 데이터 해석", question: "A/B 테스트의 P-value < 0.05가 의미하는 것은?", choices: [{ id: 1, text: "100% 진실" }, { id: 2, text: "우연히 일어났을 확률이 5% 미만" }, { id: 3, text: "사용자 95%가 만족" }, { id: 4, text: "수익 5% 상승" }], correctAnswerId: 2, explanation: "통계적 유의성은 실험 결과의 신뢰도를 뜻합니다." },
+          { id: 19, day: 5, title: "고난도: 우선순위", question: "긴급 버그와 신기능 충돌 시 판단 기준은?", choices: [{ id: 1, text: "개발팀 선호도" }, { id: 2, text: "핵심 경험 저해와 손실 규모 비교" }, { id: 3, text: "선착순 처리" }, { id: 4, text: "대표님 지시" }], correctAnswerId: 2, explanation: "비즈니스 임팩트와 리스크 중심의 판단이 필요합니다." },
+          { id: 20, day: 1, title: "고난도: 제품 리스크", question: "마티 케이건의 4대 리스크가 아닌 것은?", choices: [{ id: 1, text: "가치 리스크" }, { id: 2, text: "사용성 리스크" }, { id: 3, text: "브랜드 리스크" }, { id: 4, text: "사업 실현 가능성 리스크" }], correctAnswerId: 3, explanation: "4대 리스크는 Value, Usability, Feasibility, Viability입니다." },
+          { id: 21, day: 2, title: "고난도: 전환 비용", question: "사용자의 전환 비용을 높이는 가장 건전한 전략은?", choices: [{ id: 1, text: "탈퇴 버튼 숨기기" }, { id: 2, text: "데이터와 활동 이력 축적" }, { id: 3, text: "비싼 가격 책정" }, { id: 4, text: "광고 도배" }], correctAnswerId: 2, explanation: "데이터 축적은 사용자에게 실질적 가치를 주는 강력한 락인(Lock-in) 수단입니다." },
+          { id: 22, day: 3, title: "고난도: 인터뷰 편향", question: "FGI(표적집단면접)에서 흔히 발생하는 오류는?", choices: [{ id: 1, text: "시간 부족" }, { id: 2, text: "집단 사고(Groupthink) 및 동조" }, { id: 3, text: "비용 저렴" }, { id: 4, text: "객관성 과잉" }], correctAnswerId: 2, explanation: "다수가 소수의 강한 의견에 휩쓸리기 쉽습니다." },
+          { id: 23, day: 4, title: "고난도: 가설 설정", question: "가장 올바른 가설의 형태는?", choices: [{ id: 1, text: "기능을 만들면 좋아할 것이다." }, { id: 2, text: "[특정 행동] 시 [지표]가 [얼마만큼] 변할 것이다." }, { id: 3, text: "최고의 경험을 줄 것이다." }, { id: 4, text: "매출이 2배 늘 것이다." }], correctAnswerId: 2, explanation: "가설은 구체적이고 측정 가능해야 합니다." },
+          { id: 24, day: 5, title: "고난도: Kano 모델", question: "없으면 큰 불만이지만 있어도 만족도가 비례해 오르지 않는 품질은?", choices: [{ id: 1, text: "매력적 품질" }, { id: 2, text: "일차원적 품질" }, { id: 3, text: "당연적 품질" }, { id: 4, text: "무관심 품질" }], correctAnswerId: 3, explanation: "당연적(Must-be) 품질은 기본 위생 요인과 같습니다." },
+          { id: 25, day: 6, title: "고난도: LTV 지표", question: "LTV를 높이는 것과 무관한 것은?", choices: [{ id: 1, text: "이탈률 낮추기" }, { id: 2, text: "평균 주문 금액 높이기" }, { id: 3, text: "CAC 높이기" }, { id: 4, text: "구매 빈도 높이기" }], correctAnswerId: 3, explanation: "CAC가 높아지면 수익성이 악화됩니다." },
+          { id: 26, day: 1, title: "고난도: PRD 작성", question: "PRD에 포함될 성격이 아닌 것은?", choices: [{ id: 1, text: "문제의 배경" }, { id: 2, text: "성공 지표" }, { id: 3, text: "상세 기능 시나리오" }, { id: 4, text: "상세 구현 알고리즘 코드" }], correctAnswerId: 4, explanation: "PRD는 Why와 What에 집중하며 How는 개발의 영역입니다." },
+          { id: 27, day: 2, title: "고난도: 가치 제안", question: "경쟁사의 가격 공세에 대한 최선의 대응은?", choices: [{ id: 1, text: "즉시 가격 인하" }, { id: 2, text: "고유 가치 제안(Value Prop) 강화" }, { id: 3, text: "비방 광고" }, { id: 4, text: "철수" }], correctAnswerId: 2, explanation: "가격 경쟁보다는 차별화된 가치 전달이 지속 가능합니다." },
+          { id: 28, day: 3, title: "고난도: 상관 vs 인과", question: "두 지표가 함께 움직일 때 PM이 주의해야 할 점은?", choices: [{ id: 1, text: "무조건 인과관계로 믿기" }, { id: 2, text: "단순 상관관계인지 실험으로 검증하기" }, { id: 3, text: "상관관계를 무시하기" }, { id: 4, text: "데이터 무시" }], correctAnswerId: 2, explanation: "단순 상관관계를 인과로 착각하면 잘못된 리소스를 투입하게 됩니다." },
+          { id: 29, day: 5, title: "고난도: 기술 부채", question: "기술 부채 해결 요청 시 PM의 적절한 반응은?", choices: [{ id: 1, text: "무시" }, { id: 2, text: "리스크 및 미래 개발 속도 영향 파악" }, { id: 3, text: "개발팀 교체" }, { id: 4, text: "전면 중단" }], correctAnswerId: 2, explanation: "지속 가능성을 위해 부채 상환과 기능 개발의 균형이 필요합니다." },
+          { id: 30, day: 7, title: "고난도: 성장 마인드", question: "PM이 가장 경계해야 할 태도는?", choices: [{ id: 1, text: "가설이 틀릴 수 있다는 믿음" }, { id: 2, text: "직관이 항상 옳다는 확신" }, { id: 3, text: "동료의 의견 경청" }, { id: 4, text: "데이터에 기반한 의사결정" }], correctAnswerId: 2, explanation: "확증 편향은 PM의 가장 큰 적입니다." }
+        ];
+
+        function App() {
+          const [mode, setMode] = useState(AppMode.START);
+          const [limit, setLimit] = useState(10);
+          const [idx, setIdx] = useState(0);
+          const [quiz, setQuiz] = useState([]);
+          const [ans, setAns] = useState([]);
+          const [selId, setSelId] = useState(null);
+          const [showExp, setShowExp] = useState(false);
+          const [aiMsg, setAiMsg] = useState(null);
+          const [loadingAi, setLoadingAi] = useState(false);
+
+          const startChallenge = () => {
+            const shuffled = [...QUESTIONS].sort(() => 0.5 - Math.random()).slice(0, limit);
+            setQuiz(shuffled);
+            setMode(AppMode.QUIZ);
+            setIdx(0);
+            setAns([]);
+            setSelId(null);
+            setShowExp(false);
+          };
+
+          const handleAnswer = (id) => {
+            setSelId(id);
+            setShowExp(true);
+          };
+
+          const handleNext = () => {
+            const isCorrect = selId === quiz[idx].correctAnswerId;
+            const newAns = [...ans, { isCorrect }];
+            setAns(newAns);
+            if (idx === quiz.length - 1) {
+              setMode(AppMode.RESULT);
+            } else {
+              setIdx(idx + 1);
+              setSelId(null);
+              setShowExp(false);
+            }
+          };
+
+          const runAi = async () => {
+            setLoadingAi(true);
+            try {
+              const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+              const correctCount = ans.filter(a => a.isCorrect).length;
+              const prompt = `PM 마스터리 챌린지 결과 분석: 총 ${quiz.length}문제 중 ${correctCount}문제를 맞췄습니다. 이 사용자의 PM 역량 수준을 시니어 PM의 시선에서 한국어로 2-3문장 냉철하고 전문적으로 평가해주세요.`;
+              const res = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+              setAiMsg(res.text);
+            } catch (e) {
+              setAiMsg("AI 분석을 불러올 수 없습니다. API 키를 확인해주세요.");
+            } finally {
+              setLoadingAi(false);
+            }
+          };
+
+          if (mode === AppMode.START) return (
+            <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+              <div className="mb-8 p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 inline-block">
+                <span className="text-indigo-400 text-xs font-bold uppercase tracking-widest">Advanced Professional Challenge</span>
+              </div>
+              <h1 className="text-5xl md:text-7xl font-black mb-6 gradient-text tracking-tighter">PM MASTERY</h1>
+              <p className="text-slate-400 text-sm md:text-lg mb-12 max-w-lg leading-relaxed">
+                7일간의 코어 커리큘럼을 응축한 실전 테스트입니다.<br/>
+                당신의 비즈니스 논리와 제품 감각을 증명하세요.
+              </p>
+              
+              <div className="w-full max-w-sm bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl mb-10 shadow-2xl">
+                <div className="flex justify-between items-center mb-6">
+                  <span className="text-xs font-bold text-slate-500 uppercase">Challenge Length</span>
+                  <span className="text-indigo-400 font-black text-xl">{limit} <span className="text-xs">Questions</span></span>
+                </div>
+                <input 
+                  type="range" min="10" max="30" step="1" 
+                  value={limit} 
+                  onChange={e => setLimit(parseInt(e.target.value))} 
+                  className="mb-4"
+                />
+                <div className="flex justify-between text-[10px] text-slate-600 font-bold px-1">
+                  <span>10</span>
+                  <span>20</span>
+                  <span>30</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={startChallenge}
+                className="w-full max-w-sm py-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xl font-black transition-all shadow-2xl shadow-indigo-500/20 active:scale-95"
+              >
+                챌린지 시작하기
+              </button>
+              <p className="mt-8 text-slate-600 text-[10px] font-bold uppercase tracking-[0.2em]">Validated by Senior Product Managers</p>
+            </div>
+          );
+
+          if (mode === AppMode.RESULT) {
+            const score = ans.filter(a => a.isCorrect).length;
+            const percent = Math.round((score / quiz.length) * 100);
+            return (
+              <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+                <header className="mb-10">
+                  <h2 className="text-slate-500 font-bold text-xs uppercase tracking-widest mb-2">Final Performance Index</h2>
+                  <div className="text-8xl md:text-9xl font-black gradient-text tracking-tighter">{percent}%</div>
+                </header>
+                
+                <div className="w-full max-w-lg quiz-card p-8 rounded-3xl mb-10 text-left shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                  {aiMsg ? (
+                    <div className="animate-fade-in">
+                      <h4 className="text-indigo-400 font-bold text-xs mb-4 uppercase flex items-center gap-2">
+                        <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                        AI Senior Coach Insight
+                      </h4>
+                      <p className="text-slate-200 text-sm md:text-base leading-relaxed font-medium">{aiMsg}</p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-slate-400 text-sm mb-6">당신의 결과에 대한 시니어 PM의 전문적인 분석을 확인하세요.</p>
+                      <button 
+                        onClick={runAi} 
+                        disabled={loadingAi}
+                        className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-xl font-bold text-sm border border-slate-700 transition-all flex items-center justify-center gap-3 mx-auto"
+                      >
+                        {loadingAi ? <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div> : null}
+                        {loadingAi ? '분석 데이터를 불러오는 중...' : 'AI 전문 역량 분석 받기'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={() => setMode(AppMode.START)} 
+                  className="w-full max-w-sm py-5 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold transition-all border border-slate-700"
+                >
+                  메인으로 돌아가기
+                </button>
+              </div>
             );
+          }
+
+          return (
+            <div className="min-h-screen p-6 max-w-2xl mx-auto flex flex-col animate-fade-in">
+              <header className="flex justify-between items-end mb-8">
+                <div>
+                  <h3 className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">Challenge Phase</h3>
+                  <div className="text-3xl font-black tabular-nums">{idx + 1} <span className="text-slate-700 text-lg">/ {quiz.length}</span></div>
+                </div>
+                <button onClick={() => setMode(AppMode.START)} className="p-3 bg-slate-800/50 text-slate-500 hover:text-white rounded-xl border border-slate-700 transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+              </header>
+
+              <ProgressBar current={idx + 1} total={quiz.length} />
+
+              <QuizCard 
+                question={quiz[idx]} 
+                onAnswer={handleAnswer} 
+                selectedId={selId} 
+                showExplanation={showExp} 
+              />
+
+              <div className="mt-10 flex justify-end">
+                {showExp && (
+                  <button
+                    onClick={handleNext}
+                    className="w-full sm:w-auto px-12 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-lg font-black transition-all shadow-2xl flex items-center justify-center gap-3 active:scale-95"
+                  >
+                    {idx === quiz.length - 1 ? '결과 리포트 보기' : '다음 문항으로'}
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          );
         }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
